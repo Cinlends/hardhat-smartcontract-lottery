@@ -1,0 +1,12 @@
+# 不要格式化的文件夹
+artifacts
+cache
+coverage
+deployments
+node_modules
+
+# 不要格式化的文件
+yarn.lock
+README.md
+coverage.json
+package.json

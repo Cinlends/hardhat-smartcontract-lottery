@@ -9,4 +9,125 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.7;
 
-contract Raffle {}
+import "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
+
+// 自定义错误，表明属于哪个合约，错误信息
+error Raffle__NotEnoughETHEntered();
+error Raffle__TransferFailed();
+
+contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
+	/* Type */
+	enum RaffleState {
+		OPEN,
+		CALCULATING
+	}
+
+	/* State Variables */
+	// 设置入场费
+	uint256 private immutable i_entranceFee;
+	// 存储参与抽奖的人，需要是可支付的地址
+	address payable[] private s_players;
+	VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
+	// gas Lane key hash value，最大gas 您愿意为请求支付的价格（以 wei 为单位），超过这个gas就不会调用
+	bytes32 private immutable i_gasLane;
+	// 订阅的chainlink合约id
+	uint64 private immutable i_subscriptionId;
+	// 限制回调我们 fulfillRandomWords() 可以使用的gas，防止 fulfillRandomWords() 花费了太多gas
+	uint32 private immutable i_callbackGasLimit;
+	// 请求随机数后需要的区块确认数，常量 3
+	uint16 private constant REQUEST_CONFIRMATIONS = 3;
+	// 设置请求随机数的个数
+	uint32 private constant NUM_WORDS = 1;
+
+	// Lottery Variables
+	address private s_recentWinner;
+	RaffleState private s_raffleState;
+
+	/* Events */
+	// 事件命名最好是与函数命名相反
+	event RaffleEnter(address indexed player);
+	event RequestRaffleWinner(uint256 indexed requestId);
+	event WinnerPicked(address indexed winner);
+
+	// vrfCoordinatorV2是随机数验证的合约地址
+	constructor(
+		address vrfCoordinatorV2,
+		uint256 entranceFee,
+		bytes32 gasLane,
+		uint64 subscriptionId,
+		uint32 callbackGasLimit
+	) VRFConsumerBaseV2(vrfCoordinatorV2) {
+		i_entranceFee = entranceFee;
+		i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
+		i_gasLane = gasLane;
+		i_subscriptionId = subscriptionId;
+		i_callbackGasLimit = callbackGasLimit;
+		// 初始化抽奖状态为开启
+		s_raffleState = RaffleState.OPEN;
+	}
+
+	// 参与抽奖
+	function enterRaffle() public payable {
+		// 先要判断入场费给的是否足够
+		if (msg.value < i_entranceFee) {
+			revert Raffle__NotEnoughETHEntered();
+		}
+		// 把参与抽奖的人存储起来
+		s_players.push(payable(msg.sender));
+		// 当我们更新了数组或者mapping的时候，需要触发事件(event)，向链外汇报
+		emit RaffleEnter(msg.sender);
+	}
+
+	/**
+	 * @dev 这个函数是 chainlink keeper 调用的，用来检查是否需要触发执行 performUpkeep()，条件是 upkeepNeeded 返回 true
+	 * 想要让 upkeepNeeded 返回 true,需要以下条件：
+	 * 1. 时间间隔大于设定值
+	 * 2. 抽奖需要至少一人参与，奖池里有足够的ether
+	 * 3. 我们的 keeper 要有足够的 LINK 来支付
+	 * 4. 抽奖要处于开启状态(比如在请求随机数期间就应该关闭参与抽奖，防止新的人参加)
+	 */
+	function checkUpkeep(bytes calldata /* checkData */) external override returns (bool upkeepNeeded, bytes memory /* performData */) {}
+
+	// 选择一个随机的中奖者(这里就需要使用到 chainlink VRF 和 chainlink keeper 了)
+	function pickRandomWinner() external {
+		// requestRandomWords会返回调用者的信息
+		uint256 requestId = i_vrfCoordinator.requestRandomWords(
+			i_gasLane, // gaslane 你愿意支付的最大gas费，不同网络上的gas费不一样
+			i_subscriptionId,
+			REQUEST_CONFIRMATIONS,
+			i_callbackGasLimit,
+			NUM_WORDS
+		);
+		// 链外log
+		emit RequestRaffleWinner(requestId);
+	}
+
+	// 重写VRF的函数
+	function fulfillRandomWords(uint256 /*requestId*/, uint256[] memory randomWords) internal override {
+		uint256 winnerIndex = randomWords[0] % s_players.length;
+		address payable recentWinner = s_players[winnerIndex];
+		s_recentWinner = recentWinner;
+		// 把奖池的钱发送给中奖者
+		(bool success, ) = recentWinner.call{value: address(this).balance}("");
+		// require(success, "Failed to send money to winner"); 用 revert 更省gas
+		if (!success) {
+			revert Raffle__TransferFailed();
+		}
+		emit WinnerPicked(recentWinner);
+	}
+
+	/* view / pure functions */
+	function getEntranceFee() public view returns (uint256) {
+		return i_entranceFee;
+	}
+
+	function getPlayer(uint256 index) public view returns (address) {
+		return s_players[index];
+	}
+
+	function getRecentWinner() public view returns (address) {
+		return s_recentWinner;
+	}
+}

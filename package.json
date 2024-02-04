@@ -1,6 +1,7 @@
 {
 	"name": "hardhat-lottery",
 	"devDependencies": {
+		"@chainlink/contracts": "^0.8.0",
 		"@nomicfoundation/hardhat-ethers": "^3.0.5",
 		"@nomiclabs/hardhat-ethers": "npm:hardhat-deploy-ethers",
 		"@nomiclabs/hardhat-etherscan": "^3.1.8",

@@ -16,6 +16,8 @@ import "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
 // 自定义错误，表明属于哪个合约，错误信息
 error Raffle__NotEnoughETHEntered();
 error Raffle__TransferFailed();
+error Raffle__RaffleNotOpen();
+error Raffle__UpkeepNotNeeded();
 
 contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 	/* Type */
@@ -44,6 +46,10 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 	// Lottery Variables
 	address private s_recentWinner;
 	RaffleState private s_raffleState;
+	// 记录上一次抽奖的时间戳
+	uint256 private s_latestTimeStamp;
+	// 设置抽奖的时间间隔
+	uint256 private immutable i_interval;
 
 	/* Events */
 	// 事件命名最好是与函数命名相反
@@ -57,7 +63,8 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 		uint256 entranceFee,
 		bytes32 gasLane,
 		uint64 subscriptionId,
-		uint32 callbackGasLimit
+		uint32 callbackGasLimit,
+		uint256 interval
 	) VRFConsumerBaseV2(vrfCoordinatorV2) {
 		i_entranceFee = entranceFee;
 		i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
@@ -66,6 +73,9 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 		i_callbackGasLimit = callbackGasLimit;
 		// 初始化抽奖状态为开启
 		s_raffleState = RaffleState.OPEN;
+		// 初始化第一次抽奖的时间戳
+		s_latestTimeStamp = block.timestamp;
+		i_interval = interval;
 	}
 
 	// 参与抽奖
@@ -73,6 +83,9 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 		// 先要判断入场费给的是否足够
 		if (msg.value < i_entranceFee) {
 			revert Raffle__NotEnoughETHEntered();
+		}
+		if (s_raffleState != RaffleState.OPEN) {
+			revert Raffle__RaffleNotOpen();
 		}
 		// 把参与抽奖的人存储起来
 		s_players.push(payable(msg.sender));
@@ -88,10 +101,22 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 	 * 3. 我们的 keeper 要有足够的 LINK 来支付
 	 * 4. 抽奖要处于开启状态(比如在请求随机数期间就应该关闭参与抽奖，防止新的人参加)
 	 */
-	function checkUpkeep(bytes calldata /* checkData */) external override returns (bool upkeepNeeded, bytes memory /* performData */) {}
+	function checkUpkeep(bytes memory /* checkData */) public view override returns (bool upkeepNeeded, bytes memory /* performData */) {
+		bool isOpen = (s_raffleState == RaffleState.OPEN);
+		bool hasEnoughPlayers = (s_players.length > 0);
+		bool timePassed = ((block.timestamp - s_latestTimeStamp) > i_interval);
+		bool hasEnoughEther = (address(this).balance > 0);
+		// 满足上面所有条件，返回tre，触发performUpkeep()
+		upkeepNeeded = (isOpen && hasEnoughPlayers && timePassed && hasEnoughEther);
+	}
 
 	// 选择一个随机的中奖者(这里就需要使用到 chainlink VRF 和 chainlink keeper 了)
-	function pickRandomWinner() external {
+	function performUpkeep(bytes calldata /* performData */) external override {
+		(bool upkeepNeeded, ) = checkUpkeep("");
+		if (!upkeepNeeded) {
+			revert Raffle__UpkeepNotNeeded();
+		}
+		s_raffleState = RaffleState.CALCULATING;
 		// requestRandomWords会返回调用者的信息
 		uint256 requestId = i_vrfCoordinator.requestRandomWords(
 			i_gasLane, // gaslane 你愿意支付的最大gas费，不同网络上的gas费不一样
@@ -109,6 +134,11 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 		uint256 winnerIndex = randomWords[0] % s_players.length;
 		address payable recentWinner = s_players[winnerIndex];
 		s_recentWinner = recentWinner;
+		s_raffleState = RaffleState.OPEN;
+		// 清空参与抽奖的人
+		s_players = new address payable[](0);
+		// 更新抽奖的时间戳
+		s_latestTimeStamp = block.timestamp;
 		// 把奖池的钱发送给中奖者
 		(bool success, ) = recentWinner.call{value: address(this).balance}("");
 		// require(success, "Failed to send money to winner"); 用 revert 更省gas
@@ -129,5 +159,29 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 
 	function getRecentWinner() public view returns (address) {
 		return s_recentWinner;
+	}
+
+	function getRaffleState() public view returns (RaffleState) {
+		return s_raffleState;
+	}
+
+	function getNumWords() public pure returns (uint32) {
+		return NUM_WORDS;
+	}
+
+	function getNumberOfPlayers() public view returns (uint256) {
+		return s_players.length;
+	}
+
+	function getInterval() public view returns (uint256) {
+		return i_interval;
+	}
+
+	function getLatestTimeStamp() public view returns (uint256) {
+		return s_latestTimeStamp;
+	}
+
+	function getConfirmations() public pure returns (uint16) {
+		return REQUEST_CONFIRMATIONS;
 	}
 }

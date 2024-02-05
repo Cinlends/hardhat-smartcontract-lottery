@@ -13,6 +13,7 @@ import "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
 
+/* Error */
 // 自定义错误，表明属于哪个合约，错误信息
 error Raffle__NotEnoughETHEntered();
 error Raffle__TransferFailed();
@@ -37,7 +38,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 	// 订阅的chainlink合约id
 	uint64 private immutable i_subscriptionId;
 	// 限制回调我们 fulfillRandomWords() 可以使用的gas，防止 fulfillRandomWords() 花费了太多gas
-	uint32 private immutable i_callbackGasLimit;
+	uint32 private immutable i_callBackGasLimit;
 	// 请求随机数后需要的区块确认数，常量 3
 	uint16 private constant REQUEST_CONFIRMATIONS = 3;
 	// 设置请求随机数的个数
@@ -57,20 +58,21 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 	event RequestRaffleWinner(uint256 indexed requestId);
 	event WinnerPicked(address indexed winner);
 
+	/* Function */
 	// vrfCoordinatorV2是随机数验证的合约地址
 	constructor(
 		address vrfCoordinatorV2,
 		uint256 entranceFee,
 		bytes32 gasLane,
 		uint64 subscriptionId,
-		uint32 callbackGasLimit,
+		uint32 callBackGasLimit,
 		uint256 interval
 	) VRFConsumerBaseV2(vrfCoordinatorV2) {
 		i_entranceFee = entranceFee;
 		i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
 		i_gasLane = gasLane;
 		i_subscriptionId = subscriptionId;
-		i_callbackGasLimit = callbackGasLimit;
+		i_callBackGasLimit = callBackGasLimit;
 		// 初始化抽奖状态为开启
 		s_raffleState = RaffleState.OPEN;
 		// 初始化第一次抽奖的时间戳
@@ -79,17 +81,21 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 	}
 
 	// 参与抽奖
+	/**
+	 * @dev 用户参与抽奖的函数。
+	 * @notice 用户需要支付足够的入场费用才能参与抽奖。
+	 * @notice 只有在抽奖状态为OPEN时才能参与抽奖。
+	 * @notice 参与抽奖后，用户的地址将被存储在参与者数组中。
+	 * @notice 在更新参与者数组时，会触发RaffleEnter事件。
+	 */
 	function enterRaffle() public payable {
-		// 先要判断入场费给的是否足够
 		if (msg.value < i_entranceFee) {
 			revert Raffle__NotEnoughETHEntered();
 		}
 		if (s_raffleState != RaffleState.OPEN) {
 			revert Raffle__RaffleNotOpen();
 		}
-		// 把参与抽奖的人存储起来
 		s_players.push(payable(msg.sender));
-		// 当我们更新了数组或者mapping的时候，需要触发事件(event)，向链外汇报
 		emit RaffleEnter(msg.sender);
 	}
 
@@ -122,7 +128,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 			i_gasLane, // gaslane 你愿意支付的最大gas费，不同网络上的gas费不一样
 			i_subscriptionId,
 			REQUEST_CONFIRMATIONS,
-			i_callbackGasLimit,
+			i_callBackGasLimit,
 			NUM_WORDS
 		);
 		// 链外log

@@ -31,16 +31,24 @@ module.exports = async function ({ getNamedAccounts, deployments }) {
 	const callBackGasLimit = networkConfig[chainId]["callBackGasLimit"];
 	const interval = networkConfig[chainId]["interval"];
 	const args = [vrfCoordinatorV2Address, entranceFee, gasLane, subscriptionId, callBackGasLimit, interval];
+	log("deploying Raffle...");
 	const raffle = await deploy("Raffle", {
 		from: deployer,
 		args: args,
 		log: true,
 		waitConfirmations: network.config.blockConfirmation || 1,
 	});
+	if (developmentChains.includes(network.name)) {
+		const vrfCoordinatorV2Mock = await ethers.getContract("VRFCoordinatorV2Mock");
+		await vrfCoordinatorV2Mock.addConsumer(subscriptionId, raffle.address);
+		log("Consumer is added and this was the fix ig");
+	}
+
 	// verify
 	if (!developmentChains.includes(network.name) && process.env.ETHER_SCAN_API_KEY) {
 		await verify(raffle.address, args);
 	}
+	log("Raffle deployed!");
 	log("-------------------------------------");
 };
 

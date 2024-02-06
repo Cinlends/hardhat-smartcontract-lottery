@@ -112,7 +112,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 		bool hasEnoughPlayers = (s_players.length > 0);
 		bool timePassed = ((block.timestamp - s_latestTimeStamp) > i_interval);
 		bool hasEnoughEther = (address(this).balance > 0);
-		// 满足上面所有条件，返回tre，触发performUpkeep()
+		// 满足上面所有条件，返回true，触发performUpkeep()
 		upkeepNeeded = (isOpen && hasEnoughPlayers && timePassed && hasEnoughEther);
 	}
 
@@ -189,5 +189,13 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 
 	function getConfirmations() public pure returns (uint16) {
 		return REQUEST_CONFIRMATIONS;
+	}
+
+	function getVrfCoordinator() public view returns (address) {
+		return address(i_vrfCoordinator);
+	}
+
+	function getSubscriptionId() public view returns (uint64) {
+		return i_subscriptionId;
 	}
 }

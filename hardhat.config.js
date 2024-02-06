@@ -1,7 +1,6 @@
-// 测试用的
-require("@nomiclabs/hardhat-waffle");
-// 扫描验证合约用的
-require("@nomiclabs/hardhat-etherscan");
+require("@nomicfoundation/hardhat-toolbox");
+require("@nomiclabs/hardhat-ethers");
+
 // 部署合约用的
 require("hardhat-deploy");
 // 测试单元测试对合约的覆盖率用的
@@ -52,5 +51,8 @@ module.exports = {
 		player: {
 			default: 1,
 		},
+	},
+	gasReporter: {
+		enabled: false,
 	},
 };

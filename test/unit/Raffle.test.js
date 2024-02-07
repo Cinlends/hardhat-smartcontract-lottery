@@ -3,10 +3,11 @@ const { networkConfig } = require("../../helper-hardhat-config");
 const { assert, expect } = require("chai");
 
 describe("Raffle Unit Tests", () => {
-	let deployer, raffle, VRFCoordinatorV2Mock, entranceFee, interval;
+	let deployer, raffle, VRFCoordinatorV2Mock, entranceFee, interval, accounts;
 	const chainId = network.config.chainId;
 	beforeEach(async () => {
 		deployer = (await getNamedAccounts()).deployer;
+		accounts = await ethers.getSigners();
 		await deployments.fixture(["all"]);
 		raffle = await ethers.getContract("Raffle", deployer);
 		VRFCoordinatorV2Mock = await ethers.getContract("VRFCoordinatorV2Mock", deployer);
@@ -116,6 +117,43 @@ describe("Raffle Unit Tests", () => {
 			await expect(VRFCoordinatorV2Mock.fulfillRandomWords(0, raffle)).to.be.revertedWith("nonexistent request");
 		});
 		// The full process
-		it("Pick a winner,resets and sends money", async () => {});
+		it("Pick a winner,resets and sends money", async () => {
+			const additionalEntrances = 3; // to test
+			const startingIndex = 2;
+			let startingBalance;
+			for (let i = startingIndex; i < startingIndex + additionalEntrances; i++) {
+				// 多人参与抽奖
+				raffle = await raffle.connect(accounts[i]);
+				await raffle.enterRaffle({ value: entranceFee });
+			}
+			const startingTimeStamp = await raffle.getLatestTimeStamp();
+
+			await new Promise(async (resolve, reject) => {
+				// 先创建一个监听事件，不使用 await 进行等待，它得到一个 promise，直接运行下面的代码
+				raffle.once("WinnerPicked", async () => {
+					// event listener for WinnerPicked
+					console.log("WinnerPicked event triggered!");
+
+					try {
+						// assert 各种状态是否正确更新
+						resolve(); // if try passes, resolves the promise
+					} catch (e) {
+						reject(e); // if try fails, rejects the promise
+					}
+				});
+
+				// kicking off the event by mocking the chainlink keepers and vrf coordinator
+				try {
+					const tx = await raffle.performUpkeep("0x");
+					const txReceipt = await tx.wait(1);
+					startingBalance = await ethers.provider.getBalance(accounts[2]);
+					const raffleAddress = await raffle.getAddress();
+					console.log(`requestId: ${txReceipt.logs[1].args.requestId}`);
+					await VRFCoordinatorV2Mock.fulfillRandomWords(txReceipt.logs[1].args.requestId, raffleAddress);
+				} catch (e) {
+					reject(e);
+				}
+			});
+		});
 	});
 });

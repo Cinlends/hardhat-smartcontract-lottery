@@ -12,6 +12,7 @@ pragma solidity ^0.8.7;
 import "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
+import "hardhat/console.sol";
 
 /* Error */
 // 自定义错误，表明属于哪个合约，错误信息
@@ -151,6 +152,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 		if (!success) {
 			revert Raffle__TransferFailed();
 		}
+		console.log("Winner picked! Emit it");
 		emit WinnerPicked(recentWinner);
 	}
 
